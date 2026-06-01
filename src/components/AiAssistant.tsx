@@ -1,5 +1,13 @@
 import React, { useState, useRef, useEffect } from "react";
-import { MessageSquare, Send, X, ArrowUpRight, HelpCircle, Bot, Loader2 } from "lucide-react";
+import {
+  MessageSquare,
+  Send,
+  X,
+  ArrowUpRight,
+  HelpCircle,
+  Bot,
+  Loader2,
+} from "lucide-react";
 
 interface Message {
   id: string;
@@ -13,8 +21,8 @@ export default function AiAssistant() {
     {
       id: "wel",
       sender: "assistant",
-      text: "Connection established. I am Dhairya's AI Envoy. How can I assist you?"
-    }
+      text: "Connection established. I am Dhairya's AI Envoy. How can I assist you?",
+    },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,7 +32,7 @@ export default function AiAssistant() {
     "Tell me about SafarBuddy",
     "What is Dhairya's academic background?",
     "What was his role at BrandedBuddies?",
-    "Tell me about Tomato Disease ML"
+    "Tell me about Tomato Disease ML",
   ];
 
   useEffect(() => {
@@ -33,65 +41,62 @@ export default function AiAssistant() {
 
   const sendMessage = async (textToSend: string) => {
     if (!textToSend.trim()) return;
-    
+
     const userMsg: Message = {
       id: String(Date.now()),
       sender: "user",
-      text: textToSend
+      text: textToSend,
     };
 
-    setMessages(prev => [...prev, userMsg]);
+    setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
 
     try {
       // Map all previous user messages and assistant messages to send as session history
-      const history = [...messages, userMsg].map(m => ({
+      const history = [...messages, userMsg].map((m) => ({
         role: m.sender === "assistant" ? "assistant" : "user",
-        content: m.text
+        content: m.text,
       }));
 
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history })
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: history,
+        }),
       });
 
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
-
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Invalid response content type from AI API");
-      }
-
       const data = await res.json();
-      
+
       const assistantMsg: Message = {
         id: String(Date.now() + 1),
         sender: "assistant",
-        text: data.message || "I apologize, our network socket timed out. Try asking again!"
+        text: data?.message || "I'm temporarily unavailable. Please try again.",
       };
-      
-      setMessages(prev => [...prev, assistantMsg]);
+
+      setMessages((prev) => [...prev, assistantMsg]);
     } catch (err: any) {
       console.error("Chat error:", err);
-      let errorMsg = "I appear to be in local deployment mode. Please configure GEMINI_API_KEY on the server to enable AI responses.";
-      
+      let errorMsg =
+        "I appear to be in local deployment mode. Please configure GEMINI_API_KEY on the server to enable AI responses.";
+
       if (err?.message?.includes("503")) {
-        errorMsg = "AI service not available. GEMINI_API_KEY environment variable is not configured.";
+        errorMsg =
+          "AI service not available. GEMINI_API_KEY environment variable is not configured.";
       } else if (err?.message?.includes("Invalid response")) {
         errorMsg = "Server error. Backend may not be running correctly.";
       }
-      
-      setMessages(prev => [
+
+      setMessages((prev) => [
         ...prev,
         {
           id: String(Date.now() + 2),
           sender: "assistant",
-          text: errorMsg
-        }
+          text: errorMsg,
+        },
       ]);
     } finally {
       setLoading(false);
@@ -123,7 +128,7 @@ export default function AiAssistant() {
 
       {/* 2. Floating AI Dialogue Panel */}
       {isOpen && (
-        <div 
+        <div
           id="chat-dialogue-panel"
           className="w-80 md:w-96 h-[500px] rounded-2xl bg-slate-900/95 border border-slate-800 shadow-2xl flex flex-col backdrop-blur-xl animate-fade-in divide-y divide-slate-800"
           style={{ transform: "translateY(0)" }}
@@ -132,7 +137,6 @@ export default function AiAssistant() {
           <div className="p-4 flex items-center justify-between bg-slate-950 rounded-t-2xl">
             <div className="flex items-center gap-2.5">
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-              
             </div>
             <button
               id="close-chat-btn"
@@ -177,7 +181,9 @@ export default function AiAssistant() {
           {/* Quick Click Prompts */}
           {messages.length === 1 && !loading && (
             <div className="p-3 bg-slate-950/45 space-y-1.5 border-t border-slate-800/65">
-              <span className="text-[10px] text-slate-500 font-mono uppercase tracking-widest block mb-1">Recruiter Hotlinks:</span>
+              <span className="text-[10px] text-slate-500 font-mono uppercase tracking-widest block mb-1">
+                Recruiter Hotlinks:
+              </span>
               <div className="flex flex-wrap gap-1.5">
                 {quickPrompts.map((p) => (
                   <button
@@ -195,7 +201,10 @@ export default function AiAssistant() {
           )}
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="p-3 bg-slate-950 rounded-b-2xl flex gap-1.5">
+          <form
+            onSubmit={handleSubmit}
+            className="p-3 bg-slate-950 rounded-b-2xl flex gap-1.5"
+          >
             <input
               id="chat-input"
               type="text"

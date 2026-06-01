@@ -15,12 +15,15 @@ export default function RecruiterDashboard() {
         throw new Error(`Fetch failed: ${res.status}`);
       }
 
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Invalid content type from API");
+      // Try to parse as JSON - be more resilient
+      let data;
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        const text = await res.text();
+        throw new Error(`Failed to parse response: ${text || 'empty response'}`);
       }
-
-      const data = await res.json();
+      
       if (data.leads) {
         setLeads(data.leads);
       }
@@ -47,12 +50,15 @@ export default function RecruiterDashboard() {
         throw new Error(`Delete failed: ${res.status}`);
       }
 
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Invalid content type from delete API");
+      // Try to parse as JSON - be more resilient
+      let data;
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        const text = await res.text();
+        throw new Error(`Failed to parse response: ${text || 'empty response'}`);
       }
-
-      const data = await res.json();
+      
       if (data.success) {
         // Remove locally
         setLeads(prev => prev.filter(lead => lead.id !== id));

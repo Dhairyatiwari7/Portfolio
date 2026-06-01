@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import emailjs from "@emailjs/browser";
 import {
   Send,
   Mail,
@@ -14,6 +15,15 @@ import {
   Linkedin,
   ArrowUpRight,
 } from "lucide-react";
+
+// Initialize EmailJS with public key
+const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
+if (EMAILJS_PUBLIC_KEY) {
+  emailjs.init(EMAILJS_PUBLIC_KEY);
+} else {
+  console.error("EmailJS public key not configured");
+}
+
 export default function ContactForm() {
   const [status, setStatus] = useState<
     "idle" | "loading" | "success" | "error"
@@ -38,42 +48,40 @@ export default function ContactForm() {
     setStatus("loading");
 
     try {
-      // Send contact request to backend (handles email + AI response)
-      const backendRes = await fetch("/api/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: formData.name,
-          company: formData.company,
-          email: formData.email,
-          message: formData.message,
-        }),
+      const serviceId = import.meta.env.VITE_EMAILJS_SERVICE_ID;
+      const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
+
+      if (!serviceId || !templateId) {
+        throw new Error("EmailJS configuration missing. Please check .env file.");
+      }
+
+      // Send email via EmailJS (frontend-only, no backend)
+      const result = await emailjs.send(serviceId, templateId, {
+        to_email: "dhairyatiwari186@gmail.com",
+        from_name: formData.name,
+        from_email: formData.email,
+        company: formData.company || "Independent",
+        message: formData.message,
+        reply_to: formData.email,
       });
 
-      if (!backendRes.ok) {
-        const errorData = await backendRes.text().catch(() => "");
-        throw new Error(`Backend error: ${backendRes.status} - ${errorData}`);
+      if (result.status === 200) {
+        console.log("✅ Email sent successfully!");
+        // Generate simple auto-reply
+        const autoReply = `Hi ${formData.name},\n\nThank you for reaching out! I've received your message and will get back to you soon.\n\nBest regards,\nDhairya Tiwari`;
+        setAiResponseText(autoReply);
+        setStatus("success");
+        setFormData({
+          name: "",
+          company: "",
+          email: "",
+          message: "",
+        });
+      } else {
+        throw new Error(`Email send failed with status ${result.status}`);
       }
-
-      const contentType = backendRes.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Invalid response content type from server");
-      }
-
-      const data = await backendRes.json();
-      if (data?.autoReply) {
-        setAiResponseText(data.autoReply);
-      }
-
-      setStatus("success");
-      setFormData({
-        name: "",
-        company: "",
-        email: "",
-        message: "",
-      });
-    } catch (err) {
-      console.error("Form handling failed:", err);
+    } catch (err: any) {
+      console.error("❌ Email failed:", err);
       setStatus("error");
     }
   };

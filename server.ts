@@ -12,8 +12,8 @@ Object.assign(process.env, env);
 // Ensure JSON responses have proper Content-Type header
 function sendJSON(res: any, status: number, data: any) {
   res.status(status);
-  res.setHeader("Content-Type", "application/json");
-  res.json(data);
+  res.type('application/json');
+  return res.json(data);
 }
 
 // Initialize express app
@@ -21,8 +21,19 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+
+// Critical: Override res.json to ALWAYS set Content-Type, even if middleware fails
+const originalJson = express.response.json;
+express.response.json = function (data: any) {
+  this.type('application/json');
+  return originalJson.call(this, data);
+};
+
+// Global error handler for any unhandled responses
 app.use((req, res, next) => {
-  res.setHeader("Content-Type", "application/json");
+  if (!res.headersSent) {
+    res.type('application/json');
+  }
   next();
 });
 
@@ -55,7 +66,7 @@ let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
   // Check both VITE_ prefixed and non-prefixed versions of the API key
   let apiKey = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "";
-  
+
   if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
     throw new Error("GEMINI_API_KEY not configured. Set VITE_GEMINI_API_KEY or GEMINI_API_KEY environment variable.");
   }
@@ -71,76 +82,104 @@ function getGeminiClient(): GoogleGenAI {
   }
   return aiClient;
 }
+async function generateWithRetry(
+  client: GoogleGenAI,
+  contentPayload: any,
+  systemPrompt: string
+) {
+  const retries = 3;
 
-// 1. API: Recruiter Chat Agent
-app.post("/api/chat", async (req, res) => {
-  try {
-    const { messages } = req.body;
-    if (!messages || !Array.isArray(messages)) {
-      return sendJSON(res, 400, { error: "Invalid messages payload." });
-    }
-
+  for (let i = 0; i < retries; i++) {
     try {
-      const client = getGeminiClient();
-
-      // System instruction acts as the strict persona context of Dhairya Tiwari
-      const systemPrompt = `
-        You are "Dhairya's Professional AI Envoy" - a digital, interactive version of Dhairya Tiwari (Full-Stack Developer and ML Engineer, studying B.Tech CSE at VIT Chennai, Expected 2027, CGPA 9.3).
-        Your core mission is to represent Dhairya professionally to recruiters, tech leads, or builders who visit his website.
-        
-        Here are the strict rules you must adhere to:
-        1. Speak as a confident, highly capable, professional, and friendly engineer. 
-        2. Support your answers EXACTLY using the Resume Data provided below. NEVER invent facts, scores, dates, or projects.
-        3. If asked about a tech stack NOT mentioned, state that while you haven't deployed it yet, you pick up frameworks quickly (as demonstrated by your FastAPI and open router projects) and can adapt.
-        4. Avoid typing in blocks. Keep answers conversational, structurally neat, with selective bullet points.
-        5. The visitor to the portfolio may ask to schedule an interview or download your resume. Tell them to use the interactive contact form on the side or bottom to submit their query, which instantly notifies you and unlocks the direct PDF resume.
-
-        Dhairya's Official Resume Facts:
-        - EDUCATION: VIT Chennai, B.Tech CSE (Expected 2027, CGPA 9.3). Puranchandra Vidyaniketan (Class XII (2023): 95.8%), Birla School Pilani (Class X (2021): 90.2%).
-        - INTERNSHIPS:
-          - BrandedBuddies (Full-Stack Intern, May - June 2025). Built 'SafarBuddy' travel portal using React, Node, MongoDB. High performance improvements via lazy loading.
-          - DevLaunch Pvt Ltd (Web Developer Intern, May - July 2025). Built full-stack production platform 'pujapathseva.com' with OTP-auth, role management schemas, and gateway integrations.
-        - CORE PROJECTS:
-          - Prescripto Healthcare: MERN platform, JWT, RBAC, conflict-aware live calendar queues.
-          - AI Website Builder: Dynamic layout schemas generator using OpenRouter API, TypeScript, Prisma ORM, PostgreSQL, Stripe tier limits.
-          - Tomato Disease Predictor: GoogLeNet (Inception v1) CNN model on PyTorch + FastAPI, 10-class PlantVillage diagnostic helper.
-        - STACK & SKILLS: Python, C++, Java, Node.js, React.js, Tailwind CSS, PostgreSQL, MongoDB, PyTorch, PySpark/Panda pipelines, Git/GitHub actions.
-        - KEY ACHIEVEMENTS: Solved 730+ problems on LeetCode with contest rating 1750+. Winner of EmpowerTech Hackathon (1st Place). Rank 8 of 250+ at HacknDroid.
-      `;
-
-      // Map the incoming array of messages specifically to contents expected by the SDK
-      const contentPayload = messages.map((msg: any) => ({
-        role: msg.role === "assistant" ? "model" : "user",
-        parts: [{ text: msg.content }]
-      }));
-
-      // Perform generation using correct systemInstruction assignment block
-      const response = await client.models.generateContent({
+      return await client.models.generateContent({
         model: "gemini-2.5-flash",
         contents: contentPayload,
         config: {
           systemInstruction: systemPrompt,
           temperature: 0.7,
-        }
+        },
       });
+    } catch (err: any) {
+      if (err?.status !== 503 || i === retries - 1) {
+        throw err;
+      }
 
-      const aiText = (response && response.text) || "I apologize, but I could not formulate a response. Can you ask that again?";
-      return sendJSON(res, 200, { message: aiText });
+      await new Promise((resolve) =>
+        setTimeout(resolve, 2000 * (i + 1))
+      );
+    }
+  }
+}
+// 1. API: Recruiter Chat Agent
+app.post("/api/chat", async (req, res) => {
+  try {
+    const { messages } = req.body;
+
+    if (!messages || !Array.isArray(messages)) {
+      return sendJSON(res, 400, {
+        error: "Invalid messages payload.",
+      });
+    }
+
+    const systemPrompt = `
+      You are "Dhairya's Professional AI Envoy" - a digital representation
+      of Dhairya Tiwari. Answer professionally using only the resume data.
+    `;
+
+    const contentPayload = messages.map((msg: any) => ({
+      role: msg.role === "assistant" ? "model" : "user",
+      parts: [{ text: msg.content }],
+    }));
+
+    try {
+      const client = getGeminiClient();
+
+      const response = await generateWithRetry(
+        client,
+        contentPayload,
+        systemPrompt
+      );
+
+      const aiText =
+        response?.text ||
+        "I apologize, but I could not generate a response at the moment.";
+
+      return sendJSON(res, 200, {
+        success: true,
+        message: aiText,
+      });
     } catch (aiErr: any) {
       console.error("Gemini API Error:", aiErr);
-      return sendJSON(res, 503, {
-        error: "AI service temporarily unavailable",
-        message: aiErr.message || "Gemini API is not configured"
+
+      let fallbackMessage =
+        "Hi! I'm Dhairya's AI assistant. The AI service is currently experiencing heavy demand. Please try again in a few moments, or use the contact form to reach Dhairya directly.";
+
+      if (
+        aiErr?.status === 503 ||
+        aiErr?.message?.includes("high demand")
+      ) {
+        fallbackMessage =
+          "I'm temporarily unavailable because the Gemini service is experiencing high demand. Please try again shortly.";
+      }
+
+      return sendJSON(res, 200, {
+        success: true,
+        message: fallbackMessage,
+        fallback: true,
       });
     }
   } catch (err: any) {
     console.error("Chat API Error:", err);
-    return sendJSON(res, 500, {
-      error: "Chat API error",
-      message: err.message || "Something went wrong"
+
+    return sendJSON(res, 200, {
+      success: true,
+      message:
+        "Something went wrong while processing your request. Please try again later.",
+      fallback: true,
     });
   }
 });
+
 
 // 2. API: Submit Recruiter Query & Generate Automated Custom Response
 app.post("/api/contact", async (req, res) => {
@@ -278,23 +317,36 @@ Full-Stack Developer and ML Engineer with hands-on production internship experie
 * **MERN cert (Udemy)** & **Citi ICG Technology SWE Sim** (Loan UML patterns & credit risk research).
   `;
 
+  res.type('text/markdown');
   res.setHeader("Content-disposition", "attachment; filename=Dhairya_Tiwari_Resume.md");
-  res.setHeader("Content-type", "text/markdown");
   res.send(resumeMarkdown);
 });
 
+// Global error handler - catch-all for any unhandled errors
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("Unhandled error:", err);
+  res.type('application/json');
+  res.status(500).json({
+    error: "Internal server error",
+    message: err?.message || "Something went wrong"
+  });
+});
+
 // Setup Vite development middleware OR Production static file serving
+// IMPORTANT: This must be set up AFTER API routes but BEFORE the 404 handler
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
+    // Vite handles all non-API routes in dev mode
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    // SPA fallback: serve index.html for any non-API route
+    app.get(/^(?!\/api\/).*/, (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
