@@ -1,8 +1,14 @@
+# Dependencies (auto-created by npm install — do not commit)
 node_modules/
-build/
+
+# Build output (auto-created by npm run build — do not commit)
 dist/
-coverage/
+
+# Env secrets
+.env
+.env.local
+.env.*.local
+
+# OS / logs
 .DS_Store
 *.log
-.env*
-!.env.example

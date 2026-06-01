@@ -1,6 +1,7 @@
 import { FileDown, Printer, Copy, Check, Mail, Phone, Github, Linkedin, Award, Briefcase, GraduationCap } from "lucide-react";
 import { useState } from "react";
 import { resumeData } from "../resumeData.js";
+import { apiUrl } from "../lib/api";
 
 export default function ResumePreview() {
   const [copied, setCopied] = useState(false);
@@ -36,7 +37,7 @@ Achievements:
   };
 
   const handleDownload = () => {
-    window.location.href = "/api/download-resume";
+    window.location.href = apiUrl("/api/download-resume");
   };
 
   return (

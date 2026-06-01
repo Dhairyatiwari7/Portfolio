@@ -1,13 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
-  MessageSquare,
   Send,
   X,
   ArrowUpRight,
-  HelpCircle,
   Bot,
   Loader2,
 } from "lucide-react";
+import { apiUrl } from "../lib/api";
 
 interface Message {
   id: string;
@@ -59,7 +58,7 @@ export default function AiAssistant() {
         content: m.text,
       }));
 
-      const res = await fetch("/api/chat", {
+      const res = await fetch(apiUrl("/api/chat"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

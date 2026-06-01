@@ -1,43 +1,37 @@
+import cors from "cors";
+import dotenv from "dotenv";
 import express from "express";
-import path from "path";
 import { GoogleGenAI } from "@google/genai";
-import { createServer as createViteServer, loadEnv } from "vite";
-import { resumeData } from "./src/resumeData.js";
 
-// Load environment variables based on current execution mode (defaults to development)
-// This extracts variables starting with VITE_ and exposes them to the Node backend process.
-const env = loadEnv(process.env.NODE_ENV || "development", process.cwd(), "");
-Object.assign(process.env, env);
+dotenv.config();
 
-// Ensure JSON responses have proper Content-Type header
-function sendJSON(res: any, status: number, data: any) {
-  res.status(status);
-  res.type('application/json');
-  return res.json(data);
+function sendJSON(res: express.Response, status: number, data: unknown) {
+  return res.status(status).type("application/json").json(data);
 }
 
-// Initialize express app
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3001;
 
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+].filter((origin): origin is string => Boolean(origin));
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    methods: ["GET", "POST", "OPTIONS"],
+  }),
+);
 app.use(express.json());
 
-// Critical: Override res.json to ALWAYS set Content-Type, even if middleware fails
-const originalJson = express.response.json;
-express.response.json = function (data: any) {
-  this.type('application/json');
-  return originalJson.call(this, data);
-};
-
-// Global error handler for any unhandled responses
-app.use((req, res, next) => {
-  if (!res.headersSent) {
-    res.type('application/json');
-  }
-  next();
-});
-
-// In-memory array for persistent lead tracking across the demo
 interface Lead {
   id: string;
   name: string;
@@ -54,38 +48,43 @@ const leads: Lead[] = [
     name: "John Bradley",
     company: "Google Recruiting",
     email: "j.bradley@google.com",
-    message: "Hey Dhairya, love your MERN work on SafarBuddy and the Tomato disease model! Let's arrange a interview call.",
+    message:
+      "Hey Dhairya, love your MERN work on SafarBuddy and the Tomato disease model! Let's arrange a interview call.",
     timestamp: new Date(Date.now() - 3600000 * 2.5).toISOString(),
-    autoResponse: "Hey John! Thank you for reviewing DevLaunch and SafarBuddy. I would love to connect and talk more about how my background in distributed systems fits the role. Let me know your available times!"
-  }
+    autoResponse:
+      "Hey John! Thank you for reviewing DevLaunch and SafarBuddy. I would love to connect and talk more about how my background in distributed systems fits the role. Let me know your available times!",
+  },
 ];
 
-// Lazy-initialize Gemini API to prevent crash if key is missing
 let aiClient: GoogleGenAI | null = null;
 
 function getGeminiClient(): GoogleGenAI {
-  // Check both VITE_ prefixed and non-prefixed versions of the API key
-  let apiKey = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "";
+  const apiKey = process.env.GEMINI_API_KEY || "";
 
   if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-    throw new Error("GEMINI_API_KEY not configured. Set VITE_GEMINI_API_KEY or GEMINI_API_KEY environment variable.");
+    throw new Error(
+      "GEMINI_API_KEY not configured. Set GEMINI_API_KEY on the server.",
+    );
   }
+
   if (!aiClient) {
     aiClient = new GoogleGenAI({
       apiKey,
       httpOptions: {
         headers: {
-          "User-Agent": "aistudio-build",
-        }
-      }
+          "User-Agent": "portfolio-api",
+        },
+      },
     });
   }
+
   return aiClient;
 }
+
 async function generateWithRetry(
   client: GoogleGenAI,
-  contentPayload: any,
-  systemPrompt: string
+  contentPayload: { role: string; parts: { text: string }[] }[],
+  systemPrompt: string,
 ) {
   const retries = 3;
 
@@ -99,26 +98,26 @@ async function generateWithRetry(
           temperature: 0.7,
         },
       });
-    } catch (err: any) {
-      if (err?.status !== 503 || i === retries - 1) {
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status;
+      if (status !== 503 || i === retries - 1) {
         throw err;
       }
-
-      await new Promise((resolve) =>
-        setTimeout(resolve, 2000 * (i + 1))
-      );
+      await new Promise((resolve) => setTimeout(resolve, 2000 * (i + 1)));
     }
   }
 }
-// 1. API: Recruiter Chat Agent
+
+app.get("/health", (_req, res) => {
+  sendJSON(res, 200, { ok: true });
+});
+
 app.post("/api/chat", async (req, res) => {
   try {
     const { messages } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
-      return sendJSON(res, 400, {
-        error: "Invalid messages payload.",
-      });
+      return sendJSON(res, 400, { error: "Invalid messages payload." });
     }
 
     const systemPrompt = `
@@ -126,38 +125,34 @@ app.post("/api/chat", async (req, res) => {
       of Dhairya Tiwari. Answer professionally using only the resume data.
     `;
 
-    const contentPayload = messages.map((msg: any) => ({
-      role: msg.role === "assistant" ? "model" : "user",
-      parts: [{ text: msg.content }],
-    }));
+    const contentPayload = messages.map(
+      (msg: { role: string; content: string }) => ({
+        role: msg.role === "assistant" ? "model" : "user",
+        parts: [{ text: msg.content }],
+      }),
+    );
 
     try {
       const client = getGeminiClient();
-
       const response = await generateWithRetry(
         client,
         contentPayload,
-        systemPrompt
+        systemPrompt,
       );
 
       const aiText =
         response?.text ||
         "I apologize, but I could not generate a response at the moment.";
 
-      return sendJSON(res, 200, {
-        success: true,
-        message: aiText,
-      });
-    } catch (aiErr: any) {
+      return sendJSON(res, 200, { success: true, message: aiText });
+    } catch (aiErr: unknown) {
       console.error("Gemini API Error:", aiErr);
 
       let fallbackMessage =
         "Hi! I'm Dhairya's AI assistant. The AI service is currently experiencing heavy demand. Please try again in a few moments, or use the contact form to reach Dhairya directly.";
 
-      if (
-        aiErr?.status === 503 ||
-        aiErr?.message?.includes("high demand")
-      ) {
+      const err = aiErr as { status?: number; message?: string };
+      if (err?.status === 503 || err?.message?.includes("high demand")) {
         fallbackMessage =
           "I'm temporarily unavailable because the Gemini service is experiencing high demand. Please try again shortly.";
       }
@@ -168,9 +163,8 @@ app.post("/api/chat", async (req, res) => {
         fallback: true,
       });
     }
-  } catch (err: any) {
+  } catch (err) {
     console.error("Chat API Error:", err);
-
     return sendJSON(res, 200, {
       success: true,
       message:
@@ -180,19 +174,18 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-
-// 2. API: Submit Recruiter Query & Generate Automated Custom Response
 app.post("/api/contact", async (req, res) => {
   try {
     const { name, company, email, message } = req.body;
 
     if (!name || !email || !message) {
-      return sendJSON(res, 400, { error: "Missing required contact name, email, or content." });
+      return sendJSON(res, 400, {
+        error: "Missing required contact name, email, or content.",
+      });
     }
 
     let defaultGreeting = `Hi ${name}, thank you for reaching out! I appreciate your interest in my background. I have received your message and will follow up with you personally at ${email} soon. Feel free to download my resume below!`;
 
-    // Generate AI response if Gemini API is available
     try {
       const client = getGeminiClient();
       const prompt = `
@@ -212,15 +205,17 @@ app.post("/api/contact", async (req, res) => {
       const aiResponse = await client.models.generateContent({
         model: "gemini-2.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: { temperature: 0.8 }
+        config: { temperature: 0.8 },
       });
 
-      if (aiResponse && aiResponse.text) {
+      if (aiResponse?.text) {
         defaultGreeting = aiResponse.text.trim();
       }
     } catch (aiErr) {
-      console.warn("Could not generate AI response, using default template:", aiErr);
-      // Continue with default greeting if AI fails
+      console.warn(
+        "Could not generate AI response, using default template:",
+        aiErr,
+      );
     }
 
     const newLead: Lead = {
@@ -230,47 +225,51 @@ app.post("/api/contact", async (req, res) => {
       email,
       message,
       timestamp: new Date().toISOString(),
-      autoResponse: defaultGreeting
+      autoResponse: defaultGreeting,
     };
 
     leads.push(newLead);
-    console.log(`New lead received: ${name} from ${company || 'Independent'}`);
+    console.log(`New lead received: ${name} from ${company || "Independent"}`);
 
     return sendJSON(res, 200, {
       success: true,
       message: "Lead submitted successfully!",
       lead: newLead,
-      autoReply: defaultGreeting
+      autoReply: defaultGreeting,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Contact API Server Error:", err);
-    return sendJSON(res, 500, { error: "Could not register contact query.", details: err.message });
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return sendJSON(res, 500, {
+      error: "Could not register contact query.",
+      details: message,
+    });
   }
 });
 
-// 3. API: Fetch Outgoing/Incoming Lead Dashboard (Recruiter CRM Sandbox)
-app.get("/api/messages", (req, res) => {
+app.get("/api/messages", (_req, res) => {
   return sendJSON(res, 200, { leads });
 });
 
 app.post("/api/messages/delete", (req, res) => {
   try {
     const { id } = req.body;
-    const index = leads.findIndex(lead => lead.id === id);
+    const index = leads.findIndex((lead) => lead.id === id);
     if (index > -1) {
       leads.splice(index, 1);
-      return sendJSON(res, 200, { success: true, message: "Lead removed from sandbox dashboard." });
-    } else {
-      return sendJSON(res, 404, { error: "Lead not found." });
+      return sendJSON(res, 200, {
+        success: true,
+        message: "Lead removed from sandbox dashboard.",
+      });
     }
-  } catch (err: any) {
-    return sendJSON(res, 500, { error: "Delete failed", details: err.message });
+    return sendJSON(res, 404, { error: "Lead not found." });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return sendJSON(res, 500, { error: "Delete failed", details: message });
   }
 });
 
-// 4. API: Standalone Raw Markdown Resume Export to ensure clean instant downloads for recruiters
-app.get("/api/download-resume", (req, res) => {
-  res.setHeader("Content-Type", "text/markdown");
+app.get("/api/download-resume", (_req, res) => {
   const resumeMarkdown = `
 # DHAIRYA TIWARI
 **Full-Stack Developer & ML Engineer**
@@ -317,43 +316,31 @@ Full-Stack Developer and ML Engineer with hands-on production internship experie
 * **MERN cert (Udemy)** & **Citi ICG Technology SWE Sim** (Loan UML patterns & credit risk research).
   `;
 
-  res.type('text/markdown');
-  res.setHeader("Content-disposition", "attachment; filename=Dhairya_Tiwari_Resume.md");
-  res.send(resumeMarkdown);
+  res
+    .type("text/markdown")
+    .setHeader("Content-disposition", "attachment; filename=Dhairya_Tiwari_Resume.md")
+    .send(resumeMarkdown);
 });
 
-// Global error handler - catch-all for any unhandled errors
-app.use((err: any, req: any, res: any, next: any) => {
-  console.error("Unhandled error:", err);
-  res.type('application/json');
-  res.status(500).json({
-    error: "Internal server error",
-    message: err?.message || "Something went wrong"
-  });
+app.use(
+  (
+    err: Error,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    if (err.message.startsWith("CORS blocked")) {
+      return sendJSON(res, 403, { error: err.message });
+    }
+    console.error("Unhandled error:", err);
+    return sendJSON(res, 500, {
+      error: "Internal server error",
+      message: err.message || "Something went wrong",
+    });
+  },
+);
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Portfolio API running on port ${PORT}`);
+  console.log(`CORS allowed origins: ${allowedOrigins.join(", ") || "(none)"}`);
 });
-
-// Setup Vite development middleware OR Production static file serving
-// IMPORTANT: This must be set up AFTER API routes but BEFORE the 404 handler
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    // Vite handles all non-API routes in dev mode
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    // SPA fallback: serve index.html for any non-API route
-    app.get(/^(?!\/api\/).*/, (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Dhairya's Elite Interactive Full-Stack Server running on port ${PORT}`);
-  });
-}
-
-startServer();

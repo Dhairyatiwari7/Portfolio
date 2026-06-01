@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Database, Trash2, Mail, ExternalLink, Calendar, Users, RefreshCw, Layers } from "lucide-react";
 import { Lead } from "../types.js";
+import { apiUrl } from "../lib/api";
 
 export default function RecruiterDashboard() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -10,7 +11,7 @@ export default function RecruiterDashboard() {
   const fetchLeads = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/messages");
+      const res = await fetch(apiUrl("/api/messages"));
       if (!res.ok) {
         throw new Error(`Fetch failed: ${res.status}`);
       }
@@ -40,7 +41,7 @@ export default function RecruiterDashboard() {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch("/api/messages/delete", {
+      const res = await fetch(apiUrl("/api/messages/delete"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id })

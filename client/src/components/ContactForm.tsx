@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import emailjs from "@emailjs/browser";
+import { apiUrl } from "../lib/api";
 import {
   Send,
   Mail,
@@ -47,41 +48,66 @@ export default function ContactForm() {
     e.preventDefault();
     setStatus("loading");
 
+    const payload = {
+      name: formData.name,
+      company: formData.company,
+      email: formData.email,
+      message: formData.message,
+    };
+
+    let autoReply = `Hi ${formData.name},\n\nThank you for reaching out! I've received your message and will get back to you soon.\n\nBest regards,\nDhairya Tiwari`;
+    let emailSent = false;
+    let leadSaved = false;
+
     try {
+      try {
+        const apiRes = await fetch(apiUrl("/api/contact"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (apiRes.ok) {
+          const data = await apiRes.json();
+          leadSaved = true;
+          if (data.autoReply) {
+            autoReply = data.autoReply;
+          }
+        }
+      } catch (apiErr) {
+        console.warn("Backend contact sync failed:", apiErr);
+      }
+
       const serviceId = import.meta.env.VITE_EMAILJS_SERVICE_ID;
       const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
 
-      if (!serviceId || !templateId) {
-        throw new Error("EmailJS configuration missing. Please check .env file.");
-      }
-
-      // Send email via EmailJS (frontend-only, no backend)
-      const result = await emailjs.send(serviceId, templateId, {
-        to_email: "dhairyatiwari186@gmail.com",
-        from_name: formData.name,
-        from_email: formData.email,
-        company: formData.company || "Independent",
-        message: formData.message,
-        reply_to: formData.email,
-      });
-
-      if (result.status === 200) {
-        console.log("✅ Email sent successfully!");
-        // Generate simple auto-reply
-        const autoReply = `Hi ${formData.name},\n\nThank you for reaching out! I've received your message and will get back to you soon.\n\nBest regards,\nDhairya Tiwari`;
-        setAiResponseText(autoReply);
-        setStatus("success");
-        setFormData({
-          name: "",
-          company: "",
-          email: "",
-          message: "",
+      if (serviceId && templateId) {
+        const result = await emailjs.send(serviceId, templateId, {
+          to_email: "dhairyatiwari186@gmail.com",
+          from_name: formData.name,
+          from_email: formData.email,
+          company: formData.company || "Independent",
+          message: formData.message,
+          reply_to: formData.email,
         });
-      } else {
-        throw new Error(`Email send failed with status ${result.status}`);
+        emailSent = result.status === 200;
       }
-    } catch (err: any) {
-      console.error("❌ Email failed:", err);
+
+      if (!emailSent && !leadSaved) {
+        throw new Error(
+          "Could not send message. Configure EmailJS or ensure the API server is running.",
+        );
+      }
+
+      setAiResponseText(autoReply);
+      setStatus("success");
+      setFormData({
+        name: "",
+        company: "",
+        email: "",
+        message: "",
+      });
+    } catch (err: unknown) {
+      console.error("Contact submit failed:", err);
       setStatus("error");
     }
   };
