@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "node ./node_modules/esbuild/bin/esbuild src/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/index.js",
+    "build": "node build.mjs",
     "start": "node dist/index.js",
     "lint": "tsc --noEmit",
     "clean": "rm -rf dist node_modules"
@@ -16,6 +16,9 @@
     "dotenv": "^17.2.3",
     "esbuild": "^0.25.0",
     "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=20 <=22"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
