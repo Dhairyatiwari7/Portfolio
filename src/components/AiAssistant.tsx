@@ -76,7 +76,26 @@ export default function AiAssistant() {
       
       setMessages(prev => [...prev, assistantMsg]);
     } catch (err: any) {
-      console.error(\"Chat error:\", err);\n      let errorMsg = \"I appear to be in local deployment mode. Please configure GEMINI_API_KEY on the server to enable AI responses.\";\n      \n      if (err?.message?.includes(\"503\")) {\n        errorMsg = \"AI service not available. GEMINI_API_KEY environment variable is not configured.\";\n      } else if (err?.message?.includes(\"Invalid response\")) {\n        errorMsg = \"Server error. Backend may not be running correctly.\";\n      }\n      \n      setMessages(prev => [\n        ...prev,\n        {\n          id: String(Date.now() + 2),\n          sender: \"assistant\",\n          text: errorMsg\n        }\n      ]);\n    } finally {\n      setLoading(false);\n    }
+      console.error("Chat error:", err);
+      let errorMsg = "I appear to be in local deployment mode. Please configure GEMINI_API_KEY on the server to enable AI responses.";
+      
+      if (err?.message?.includes("503")) {
+        errorMsg = "AI service not available. GEMINI_API_KEY environment variable is not configured.";
+      } else if (err?.message?.includes("Invalid response")) {
+        errorMsg = "Server error. Backend may not be running correctly.";
+      }
+      
+      setMessages(prev => [
+        ...prev,
+        {
+          id: String(Date.now() + 2),
+          sender: "assistant",
+          text: errorMsg
+        }
+      ]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
