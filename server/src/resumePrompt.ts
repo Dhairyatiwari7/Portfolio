@@ -1,4 +1,4 @@
-/** Resume context for Gemini system instructions (keep in sync with client resume). */
+/** Resume context for AI system instructions (keep in sync with client resume). */
 export const RESUME_CONTEXT = `
 Name: Dhairya Tiwari — Full-Stack Developer & ML Engineer
 Email: dhairyatiwari186@gmail.com | Phone: +91-9721631005

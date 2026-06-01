@@ -27,7 +27,7 @@ To remove generated folders: `npm run clean` inside `client/` or `server/`.
 ```bash
 cd server
 npm install
-cp .env.example .env   # add GEMINI_API_KEY
+cp .env.example .env   # add free GROQ_API_KEY from console.groq.com/keys
 npm run dev
 ```
 
@@ -39,6 +39,8 @@ npm install
 cp .env.example .env   # optional EmailJS keys
 npm run dev
 ```
+
+**Important:** For local dev, do **not** set `VITE_API_URL` in `client/.env` (it forces calls to Render). Leave it unset so chat hits `localhost:3001`.
 
 - Frontend: http://localhost:5173  
 - API: http://localhost:3001  
@@ -53,7 +55,7 @@ npm run dev
 | Build Command | `npm install && npm run build` |
 | Start Command | `npm start` |
 
-Env: `GEMINI_API_KEY`, `FRONTEND_URL` = `https://portfolio-client-gcwe.onrender.com` (your exact static site URL, with `https://`, no trailing slash)
+Env: `GROQ_API_KEY` (free at https://console.groq.com/keys), `FRONTEND_URL` = your static site URL. Optional: `AI_MODEL` (default `llama-3.3-70b-versatile`)
 
 Optional: set **`NODE_VERSION`** = `22` in Render (avoids Node 24 + esbuild issues). The repo includes `server/.node-version`.
 

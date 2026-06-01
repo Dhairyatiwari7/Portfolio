@@ -1,7 +1,12 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
-import { GoogleGenAI } from "@google/genai";
+import {
+  aiErrorMessage,
+  generateChatText,
+  readAiApiKey,
+  testAiConnection,
+} from "./aiGenerate.js";
 import { RESUME_CONTEXT } from "./resumePrompt.js";
 
 dotenv.config();
@@ -36,7 +41,6 @@ function buildAllowedOrigins(): Set<string> {
 
 const allowedOrigins = buildAllowedOrigins();
 
-/** Allow Render static sites (*.onrender.com) in production when FRONTEND_URL is missing. */
 function isAllowedOrigin(origin: string): boolean {
   const normalized = normalizeOrigin(origin);
   if (allowedOrigins.has(normalized)) {
@@ -92,130 +96,36 @@ const leads: Lead[] = [
   },
 ];
 
-const GEMINI_MODELS = [
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-1.5-flash",
-] as const;
-
-let aiClient: GoogleGenAI | null = null;
-let cachedApiKey: string | null = null;
-
-function readGeminiApiKey(): string {
-  const raw =
-    process.env.GEMINI_API_KEY ||
-    process.env.GOOGLE_API_KEY ||
-    process.env.VITE_GEMINI_API_KEY ||
-    "";
-  return raw.trim().replace(/^["']|["']$/g, "");
-}
-
-function isLikelyValidGeminiKey(key: string): boolean {
-  return key.startsWith("AIza");
-}
-
-function getGeminiClient(): GoogleGenAI {
-  const apiKey = readGeminiApiKey();
-
-  if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-    throw new Error(
-      "GEMINI_API_KEY not configured. Set GEMINI_API_KEY on the Render API service.",
-    );
-  }
-
-  if (!isLikelyValidGeminiKey(apiKey)) {
-    throw new Error(
-      "Invalid GEMINI_API_KEY format. Create a key at https://aistudio.google.com/apikey — it should start with AIzaSy. AQ.* tokens from AI Studio apps often do not work on the server.",
-    );
-  }
-
-  if (!aiClient || cachedApiKey !== apiKey) {
-    aiClient = new GoogleGenAI({ apiKey });
-    cachedApiKey = apiKey;
-  }
-
-  return aiClient;
-}
-
-function geminiErrorMessage(err: unknown): string {
-  const status = (err as { status?: number })?.status;
-  const message = String((err as Error)?.message ?? err ?? "");
-
-  if (
-    status === 401 ||
-    status === 403 ||
-    /api.?key|invalid.*key|permission/i.test(message)
-  ) {
-    return "Gemini API key is missing or invalid on the server. In Render → API service → Environment, set GEMINI_API_KEY from https://aistudio.google.com/apikey (starts with AIzaSy).";
-  }
-  if (status === 503 || /high demand|overloaded/i.test(message)) {
-    return "Gemini is temporarily overloaded. Please try again in a moment.";
-  }
-  if (/not found|MODEL/i.test(message)) {
-    return "Gemini model unavailable. The server will retry with another model on the next deploy.";
-  }
-  return "The AI assistant could not respond right now. Please try again or use the contact form.";
-}
-
-async function generateWithRetry(
-  client: GoogleGenAI,
-  contentPayload: { role: string; parts: { text: string }[] }[],
-  systemPrompt: string,
-) {
-  let lastError: unknown;
-
-  for (const model of GEMINI_MODELS) {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        return await client.models.generateContent({
-          model,
-          contents: contentPayload,
-          config: {
-            systemInstruction: systemPrompt,
-            temperature: 0.7,
-          },
-        });
-      } catch (err: unknown) {
-        lastError = err;
-        const status = (err as { status?: number })?.status;
-        const message = String((err as Error)?.message ?? "");
-
-        if (
-          status === 404 ||
-          /not found|not supported|invalid model/i.test(message)
-        ) {
-          console.warn(`Gemini model ${model} unavailable, trying next model.`);
-          break;
-        }
-
-        if (status === 503 && attempt < 2) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, 2000 * (attempt + 1)),
-          );
-          continue;
-        }
-
-        throw err;
-      }
-    }
-  }
-
-  throw lastError;
-}
-
-const CHAT_SYSTEM_PROMPT = `You are "Dhairya's Professional AI Envoy" — a digital representative of Dhairya Tiwari.
+const CHAT_SYSTEM_PROMPT = `You are "Dhairya's Professional AI Envoy" — a friendly digital representative of Dhairya Tiwari on his portfolio website.
 Answer professionally, concisely, and only using the resume data below.
-If asked something outside this profile, say you can only discuss Dhairya's professional background.
+If asked something outside this profile, politely say you can only discuss Dhairya's professional background and suggest using the contact form.
 
 ${RESUME_CONTEXT}`;
 
-app.get("/health", (_req, res) => {
-  const key = readGeminiApiKey();
+app.get("/api/version", (_req, res) => {
   sendJSON(res, 200, {
-    ok: true,
-    geminiConfigured: Boolean(key && key !== "MY_GEMINI_API_KEY"),
-    geminiKeyFormatOk: isLikelyValidGeminiKey(key),
+    aiProvider: "groq",
+    build: "2025-groq-v1",
   });
+});
+
+app.get("/health", async (req, res) => {
+  const key = readAiApiKey();
+  const body: Record<string, unknown> = {
+    ok: true,
+    aiProvider: "groq",
+    aiConfigured: Boolean(key),
+  };
+
+  if (req.query.test === "1" && key) {
+    const test = await testAiConnection();
+    body.aiWorks = test.ok;
+    if (test.error) {
+      body.aiTestError = test.error;
+    }
+  }
+
+  sendJSON(res, 200, body);
 });
 
 app.post("/api/chat", async (req, res) => {
@@ -226,31 +136,20 @@ app.post("/api/chat", async (req, res) => {
       return sendJSON(res, 400, { error: "Invalid messages payload." });
     }
 
-    const contentPayload = messages.map(
-      (msg: { role: string; content: string }) => ({
-        role: msg.role === "assistant" ? "model" : "user",
-        parts: [{ text: msg.content }],
-      }),
-    );
+    const history = messages.map((msg: { role: string; content: string }) => ({
+      role: msg.role,
+      content: msg.content,
+    }));
 
     try {
-      const client = getGeminiClient();
-      const response = await generateWithRetry(
-        client,
-        contentPayload,
-        CHAT_SYSTEM_PROMPT,
-      );
-
-      const aiText =
-        response?.text ||
-        "I apologize, but I could not generate a response at the moment.";
+      const aiText = await generateChatText(history, CHAT_SYSTEM_PROMPT);
 
       return sendJSON(res, 200, { success: true, message: aiText });
     } catch (aiErr: unknown) {
-      console.error("Gemini API Error:", aiErr);
+      console.error("AI API Error:", aiErr);
       return sendJSON(res, 200, {
         success: true,
-        message: geminiErrorMessage(aiErr),
+        message: aiErrorMessage(aiErr),
         fallback: true,
       });
     }
@@ -259,7 +158,7 @@ app.post("/api/chat", async (req, res) => {
     return sendJSON(res, 200, {
       success: true,
       message:
-        "Something went wrong while processing your request. Please try again later.",
+        "Something went wrong while processing your request. Please try again or use the contact form.",
       fallback: true,
     });
   }
@@ -278,33 +177,26 @@ app.post("/api/contact", async (req, res) => {
     let defaultGreeting = `Hi ${name}, thank you for reaching out! I appreciate your interest in my background. I have received your message and will follow up with you personally at ${email} soon. Feel free to download my resume below!`;
 
     try {
-      const client = getGeminiClient();
-      const prompt = `
-        You are Dhairya Tiwari, a full-stack developer and ML engineer.
-        A recruiter or stakeholder has contacted you through your website contact form.
-        Generate a dynamic, professional, friendly automated personalized email response.
-        Address them by name if provided, reference their company, and comment briefly with excitement and deep passion regarding their message.
-        Keep it concise (around 3 to 4 elegant sentences). Tell them you would love to hop on a call or discuss this.
-        
-        Recruiter Details:
-        Name: ${name}
-        Company: ${company || "a forward-thinking team"}
-        Email: ${email}
-        Message: ${message}
-      `;
+      const prompt = `A recruiter contacted Dhairya through the portfolio website.
 
-      const aiResponse = await generateWithRetry(
-        client,
-        [{ role: "user", parts: [{ text: prompt }] }],
-        "You are Dhairya Tiwari, a full-stack developer. Write a brief, warm professional email reply to a recruiter.",
+Recruiter name: ${name}
+Company: ${company || "Independent"}
+Email: ${email}
+Message: ${message}
+
+Write a warm, professional auto-reply email (3–4 sentences). Address them by name, mention their company if provided, and express enthusiasm about connecting.`;
+
+      const reply = await generateChatText(
+        [{ role: "user", content: prompt }],
+        "You are Dhairya Tiwari, a full-stack developer and ML engineer. Write only the email body text.",
       );
 
-      if (aiResponse?.text) {
-        defaultGreeting = aiResponse.text.trim();
+      if (reply) {
+        defaultGreeting = reply;
       }
     } catch (aiErr) {
       console.warn(
-        "Could not generate AI response, using default template:",
+        "Could not generate AI reply for contact, using default:",
         aiErr,
       );
     }
@@ -429,18 +321,16 @@ app.use(
 );
 
 app.listen(PORT, "0.0.0.0", () => {
-  const key = readGeminiApiKey();
+  const key = readAiApiKey();
   console.log(`Portfolio API running on port ${PORT}`);
   console.log(
     `CORS allowed origins: ${[...allowedOrigins].join(", ") || "(none)"}`,
   );
-  if (!key) {
-    console.warn("[Gemini] GEMINI_API_KEY is not set — AI chat will not work.");
-  } else if (!isLikelyValidGeminiKey(key)) {
-    console.warn(
-      "[Gemini] Key does not start with AIzaSy. Use https://aistudio.google.com/apikey — AQ.* app tokens usually fail on the server.",
-    );
+  if (key) {
+    console.log("[Groq] API key loaded (free tier).");
   } else {
-    console.log("[Gemini] API key loaded.");
+    console.warn(
+      "[Groq] GROQ_API_KEY is not set — get a free key at https://console.groq.com/keys",
+    );
   }
 });

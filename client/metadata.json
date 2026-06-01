@@ -1,6 +1,6 @@
 {
   "name": "Dhairya Tiwari Portfolio",
-  "description": "Interactive 3D-styled professional portfolio of Dhairya Tiwari, Full-Stack Developer and ML Engineer, featuring an AI recruiter assistant and a contact dashboard.",
+  "description": "Interactive professional portfolio with AI recruiter assistant and contact dashboard.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_AI_API"]
 }

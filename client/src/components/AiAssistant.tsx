@@ -77,7 +77,9 @@ export default function AiAssistant() {
       const assistantMsg: Message = {
         id: String(Date.now() + 1),
         sender: "assistant",
-        text: data?.message || "I'm temporarily unavailable. Please try again.",
+        text:
+          data?.message ||
+          "I'm having trouble responding right now. Please try again or use the contact form.",
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
@@ -85,17 +87,14 @@ export default function AiAssistant() {
       console.error("Chat error:", err);
       const message = err instanceof Error ? err.message : "";
       let errorMsg =
-        "Could not reach the API. Check VITE_API_URL on the frontend and FRONTEND_URL / GEMINI_API_KEY on the server.";
+        "I couldn't connect to the server. Please check your connection and try again.";
 
       if (message.includes("Failed to fetch") || message.includes("NetworkError")) {
         errorMsg =
-          "Network or CORS error: the browser blocked the API request. Redeploy the API after setting FRONTEND_URL to your static site URL.";
-      } else if (message.includes("503")) {
-        errorMsg =
-          "AI service not available. Set GEMINI_API_KEY on the Render API service.";
+          "I can't reach the portfolio server right now. Please try again in a moment, or use the contact form to message Dhairya directly.";
       } else if (message.includes("API error")) {
         errorMsg =
-          "The API returned an error. Confirm GEMINI_API_KEY is set on the server and the API is running.";
+          "The server returned an error. Please try again shortly or use the contact form.";
       }
 
       setMessages((prev) => [
