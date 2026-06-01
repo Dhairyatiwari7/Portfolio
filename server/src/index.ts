@@ -431,7 +431,9 @@ app.use(
 app.listen(PORT, "0.0.0.0", () => {
   const key = readGeminiApiKey();
   console.log(`Portfolio API running on port ${PORT}`);
-  console.log(`CORS allowed origins: ${allowedOrigins.join(", ") || "(none)"}`);
+  console.log(
+    `CORS allowed origins: ${[...allowedOrigins].join(", ") || "(none)"}`,
+  );
   if (!key) {
     console.warn("[Gemini] GEMINI_API_KEY is not set — AI chat will not work.");
   } else if (!isLikelyValidGeminiKey(key)) {
