@@ -68,6 +68,10 @@ export default function AiAssistant() {
         }),
       });
 
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status}`);
+      }
+
       const data = await res.json();
 
       const assistantMsg: Message = {
@@ -77,16 +81,21 @@ export default function AiAssistant() {
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Chat error:", err);
+      const message = err instanceof Error ? err.message : "";
       let errorMsg =
-        "I appear to be in local deployment mode. Please configure GEMINI_API_KEY on the server to enable AI responses.";
+        "Could not reach the API. Check VITE_API_URL on the frontend and FRONTEND_URL / GEMINI_API_KEY on the server.";
 
-      if (err?.message?.includes("503")) {
+      if (message.includes("Failed to fetch") || message.includes("NetworkError")) {
         errorMsg =
-          "AI service not available. GEMINI_API_KEY environment variable is not configured.";
-      } else if (err?.message?.includes("Invalid response")) {
-        errorMsg = "Server error. Backend may not be running correctly.";
+          "Network or CORS error: the browser blocked the API request. Redeploy the API after setting FRONTEND_URL to your static site URL.";
+      } else if (message.includes("503")) {
+        errorMsg =
+          "AI service not available. Set GEMINI_API_KEY on the Render API service.";
+      } else if (message.includes("API error")) {
+        errorMsg =
+          "The API returned an error. Confirm GEMINI_API_KEY is set on the server and the API is running.";
       }
 
       setMessages((prev) => [

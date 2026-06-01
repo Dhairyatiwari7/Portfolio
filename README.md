@@ -53,7 +53,7 @@ npm run dev
 | Build Command | `npm install && npm run build` |
 | Start Command | `npm start` |
 
-Env: `GEMINI_API_KEY`, `FRONTEND_URL` (your static site URL)
+Env: `GEMINI_API_KEY`, `FRONTEND_URL` = `https://portfolio-client-gcwe.onrender.com` (your exact static site URL, with `https://`, no trailing slash)
 
 Optional: set **`NODE_VERSION`** = `22` in Render (avoids Node 24 + esbuild issues). The repo includes `server/.node-version`.
 

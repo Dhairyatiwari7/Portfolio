@@ -2,6 +2,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import { GoogleGenAI } from "@google/genai";
+import { RESUME_CONTEXT } from "./resumePrompt.js";
 
 dotenv.config();
 
@@ -12,24 +13,59 @@ function sendJSON(res: express.Response, status: number, data: unknown) {
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-].filter((origin): origin is string => Boolean(origin));
+function normalizeOrigin(url: string): string {
+  let value = url.trim().replace(/\/$/, "");
+  if (value && !/^https?:\/\//i.test(value)) {
+    value = `https://${value}`;
+  }
+  return value;
+}
+
+function buildAllowedOrigins(): Set<string> {
+  const fromEnv = [
+    process.env.FRONTEND_URL,
+    ...(process.env.FRONTEND_URLS?.split(",") ?? []),
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+  ]
+    .filter((o): o is string => Boolean(o?.trim()))
+    .map(normalizeOrigin);
+
+  return new Set(fromEnv);
+}
+
+const allowedOrigins = buildAllowedOrigins();
+
+/** Allow Render static sites (*.onrender.com) in production when FRONTEND_URL is missing. */
+function isAllowedOrigin(origin: string): boolean {
+  const normalized = normalizeOrigin(origin);
+  if (allowedOrigins.has(normalized)) {
+    return true;
+  }
+  if (/^https:\/\/[a-z0-9-]+\.onrender\.com$/i.test(normalized)) {
+    return true;
+  }
+  return false;
+}
 
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || isAllowedOrigin(origin)) {
         callback(null, true);
         return;
       }
-      callback(new Error(`CORS blocked for origin: ${origin}`));
+      console.warn(
+        `CORS blocked origin: ${origin}. Set FRONTEND_URL on the API service. Allowed: ${[...allowedOrigins].join(", ")}`,
+      );
+      callback(null, false);
     },
+    credentials: true,
     methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
+app.options("*", cors());
 app.use(express.json());
 
 interface Lead {
@@ -56,29 +92,69 @@ const leads: Lead[] = [
   },
 ];
 
+const GEMINI_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+] as const;
+
 let aiClient: GoogleGenAI | null = null;
+let cachedApiKey: string | null = null;
+
+function readGeminiApiKey(): string {
+  const raw =
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY ||
+    "";
+  return raw.trim().replace(/^["']|["']$/g, "");
+}
+
+function isLikelyValidGeminiKey(key: string): boolean {
+  return key.startsWith("AIza");
+}
 
 function getGeminiClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY || "";
+  const apiKey = readGeminiApiKey();
 
   if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
     throw new Error(
-      "GEMINI_API_KEY not configured. Set GEMINI_API_KEY on the server.",
+      "GEMINI_API_KEY not configured. Set GEMINI_API_KEY on the Render API service.",
     );
   }
 
-  if (!aiClient) {
-    aiClient = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "portfolio-api",
-        },
-      },
-    });
+  if (!isLikelyValidGeminiKey(apiKey)) {
+    throw new Error(
+      "Invalid GEMINI_API_KEY format. Create a key at https://aistudio.google.com/apikey — it should start with AIzaSy. AQ.* tokens from AI Studio apps often do not work on the server.",
+    );
+  }
+
+  if (!aiClient || cachedApiKey !== apiKey) {
+    aiClient = new GoogleGenAI({ apiKey });
+    cachedApiKey = apiKey;
   }
 
   return aiClient;
+}
+
+function geminiErrorMessage(err: unknown): string {
+  const status = (err as { status?: number })?.status;
+  const message = String((err as Error)?.message ?? err ?? "");
+
+  if (
+    status === 401 ||
+    status === 403 ||
+    /api.?key|invalid.*key|permission/i.test(message)
+  ) {
+    return "Gemini API key is missing or invalid on the server. In Render → API service → Environment, set GEMINI_API_KEY from https://aistudio.google.com/apikey (starts with AIzaSy).";
+  }
+  if (status === 503 || /high demand|overloaded/i.test(message)) {
+    return "Gemini is temporarily overloaded. Please try again in a moment.";
+  }
+  if (/not found|MODEL/i.test(message)) {
+    return "Gemini model unavailable. The server will retry with another model on the next deploy.";
+  }
+  return "The AI assistant could not respond right now. Please try again or use the contact form.";
 }
 
 async function generateWithRetry(
@@ -86,30 +162,60 @@ async function generateWithRetry(
   contentPayload: { role: string; parts: { text: string }[] }[],
   systemPrompt: string,
 ) {
-  const retries = 3;
+  let lastError: unknown;
 
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await client.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: contentPayload,
-        config: {
-          systemInstruction: systemPrompt,
-          temperature: 0.7,
-        },
-      });
-    } catch (err: unknown) {
-      const status = (err as { status?: number })?.status;
-      if (status !== 503 || i === retries - 1) {
+  for (const model of GEMINI_MODELS) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await client.models.generateContent({
+          model,
+          contents: contentPayload,
+          config: {
+            systemInstruction: systemPrompt,
+            temperature: 0.7,
+          },
+        });
+      } catch (err: unknown) {
+        lastError = err;
+        const status = (err as { status?: number })?.status;
+        const message = String((err as Error)?.message ?? "");
+
+        if (
+          status === 404 ||
+          /not found|not supported|invalid model/i.test(message)
+        ) {
+          console.warn(`Gemini model ${model} unavailable, trying next model.`);
+          break;
+        }
+
+        if (status === 503 && attempt < 2) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, 2000 * (attempt + 1)),
+          );
+          continue;
+        }
+
         throw err;
       }
-      await new Promise((resolve) => setTimeout(resolve, 2000 * (i + 1)));
     }
   }
+
+  throw lastError;
 }
 
+const CHAT_SYSTEM_PROMPT = `You are "Dhairya's Professional AI Envoy" — a digital representative of Dhairya Tiwari.
+Answer professionally, concisely, and only using the resume data below.
+If asked something outside this profile, say you can only discuss Dhairya's professional background.
+
+${RESUME_CONTEXT}`;
+
 app.get("/health", (_req, res) => {
-  sendJSON(res, 200, { ok: true });
+  const key = readGeminiApiKey();
+  sendJSON(res, 200, {
+    ok: true,
+    geminiConfigured: Boolean(key && key !== "MY_GEMINI_API_KEY"),
+    geminiKeyFormatOk: isLikelyValidGeminiKey(key),
+  });
 });
 
 app.post("/api/chat", async (req, res) => {
@@ -119,11 +225,6 @@ app.post("/api/chat", async (req, res) => {
     if (!messages || !Array.isArray(messages)) {
       return sendJSON(res, 400, { error: "Invalid messages payload." });
     }
-
-    const systemPrompt = `
-      You are "Dhairya's Professional AI Envoy" - a digital representation
-      of Dhairya Tiwari. Answer professionally using only the resume data.
-    `;
 
     const contentPayload = messages.map(
       (msg: { role: string; content: string }) => ({
@@ -137,7 +238,7 @@ app.post("/api/chat", async (req, res) => {
       const response = await generateWithRetry(
         client,
         contentPayload,
-        systemPrompt,
+        CHAT_SYSTEM_PROMPT,
       );
 
       const aiText =
@@ -147,19 +248,9 @@ app.post("/api/chat", async (req, res) => {
       return sendJSON(res, 200, { success: true, message: aiText });
     } catch (aiErr: unknown) {
       console.error("Gemini API Error:", aiErr);
-
-      let fallbackMessage =
-        "Hi! I'm Dhairya's AI assistant. The AI service is currently experiencing heavy demand. Please try again in a few moments, or use the contact form to reach Dhairya directly.";
-
-      const err = aiErr as { status?: number; message?: string };
-      if (err?.status === 503 || err?.message?.includes("high demand")) {
-        fallbackMessage =
-          "I'm temporarily unavailable because the Gemini service is experiencing high demand. Please try again shortly.";
-      }
-
       return sendJSON(res, 200, {
         success: true,
-        message: fallbackMessage,
+        message: geminiErrorMessage(aiErr),
         fallback: true,
       });
     }
@@ -202,11 +293,11 @@ app.post("/api/contact", async (req, res) => {
         Message: ${message}
       `;
 
-      const aiResponse = await client.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: { temperature: 0.8 },
-      });
+      const aiResponse = await generateWithRetry(
+        client,
+        [{ role: "user", parts: [{ text: prompt }] }],
+        "You are Dhairya Tiwari, a full-stack developer. Write a brief, warm professional email reply to a recruiter.",
+      );
 
       if (aiResponse?.text) {
         defaultGreeting = aiResponse.text.trim();
@@ -329,9 +420,6 @@ app.use(
     res: express.Response,
     _next: express.NextFunction,
   ) => {
-    if (err.message.startsWith("CORS blocked")) {
-      return sendJSON(res, 403, { error: err.message });
-    }
     console.error("Unhandled error:", err);
     return sendJSON(res, 500, {
       error: "Internal server error",
@@ -341,6 +429,16 @@ app.use(
 );
 
 app.listen(PORT, "0.0.0.0", () => {
+  const key = readGeminiApiKey();
   console.log(`Portfolio API running on port ${PORT}`);
   console.log(`CORS allowed origins: ${allowedOrigins.join(", ") || "(none)"}`);
+  if (!key) {
+    console.warn("[Gemini] GEMINI_API_KEY is not set — AI chat will not work.");
+  } else if (!isLikelyValidGeminiKey(key)) {
+    console.warn(
+      "[Gemini] Key does not start with AIzaSy. Use https://aistudio.google.com/apikey — AQ.* app tokens usually fail on the server.",
+    );
+  } else {
+    console.log("[Gemini] API key loaded.");
+  }
 });
