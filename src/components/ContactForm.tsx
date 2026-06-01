@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import emailjs from "@emailjs/browser";
 import {
   Send,
   Mail,
@@ -15,7 +14,6 @@ import {
   Linkedin,
   ArrowUpRight,
 } from "lucide-react";
-emailjs.init(import.meta.env.VITE_EMAILJS_PUBLIC_KEY);
 export default function ContactForm() {
   const [status, setStatus] = useState<
     "idle" | "loading" | "success" | "error"
@@ -35,46 +33,47 @@ export default function ContactForm() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("loading");
+
     try {
-      // Submit lead to local express backend database memory
-      const response = await fetch("/api/contact", {
+      // Send contact request to backend (handles email + AI response)
+      const backendRes = await fetch("/api/contact", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: formData.name,
+          company: formData.company,
+          email: formData.email,
+          message: formData.message,
+        }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to register lead on the local server.");
+      if (!backendRes.ok) {
+        const errorData = await backendRes.text().catch(() => "");
+        throw new Error(`Backend error: ${backendRes.status} - ${errorData}`);
       }
 
-      const responseData = await response.json();
-      if (responseData && responseData.aiMessage) {
-        setAiResponseText(responseData.aiMessage);
+      const contentType = backendRes.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Invalid response content type from server");
       }
 
-      // EmailJS integration sequence
-      const templateParams = {
-        from_name: formData.name,
-        company_name: formData.company,
-        reply_to: formData.email,
-        message: formData.message,
-      };
-
-      await emailjs.send(
-        import.meta.env.VITE_EMAILJS_SERVICE_ID,
-        import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
-        templateParams,
-      );
+      const data = await backendRes.json();
+      if (data?.autoReply) {
+        setAiResponseText(data.autoReply);
+      }
 
       setStatus("success");
-      setFormData({ name: "", company: "", email: "", message: "" });
-    } catch (error) {
-      console.error("Form handling failed:", error);
+      setFormData({
+        name: "",
+        company: "",
+        email: "",
+        message: "",
+      });
+    } catch (err) {
+      console.error("Form handling failed:", err);
       setStatus("error");
     }
   };

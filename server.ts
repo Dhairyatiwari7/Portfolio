@@ -9,6 +9,13 @@ import { resumeData } from "./src/resumeData.js";
 const env = loadEnv(process.env.NODE_ENV || "development", process.cwd(), "");
 Object.assign(process.env, env);
 
+// Debug: Log API key status
+if (process.env.VITE_GEMINI_API_KEY && process.env.VITE_GEMINI_API_KEY !== "MY_GEMINI_API_KEY") {
+  console.log("✓ Gemini API key loaded");
+} else {
+  console.warn("⚠ Gemini API key not configured - AI responses will use fallback");
+}
+
 // Initialize express app
 const app = express();
 const PORT = 3000;
@@ -65,8 +72,7 @@ app.post("/api/chat", async (req, res) => {
   try {
     const { messages } = req.body;
     if (!messages || !Array.isArray(messages)) {
-      res.status(400).json({ error: "Invalid messages payload." });
-      return;
+      return res.status(400).json({ error: "Invalid messages payload." });
     }
 
     const client = getGeminiClient();
@@ -112,11 +118,11 @@ app.post("/api/chat", async (req, res) => {
       }
     });
 
-    const aiText = response.text || "I apologize, but I could not formulate a response. Can you ask that again?";
-    res.json({ message: aiText });
+    const aiText = (response && response.text) || "I apologize, but I could not formulate a response. Can you ask that again?";
+    return res.status(200).json({ message: aiText });
   } catch (err: any) {
     console.error("Chat API Error:", err);
-    res.status(500).json({
+    return res.status(500).json({
       error: "AI Envoy offline",
       message: err.message || "Something went wrong"
     });
@@ -129,12 +135,12 @@ app.post("/api/contact", async (req, res) => {
     const { name, company, email, message } = req.body;
 
     if (!name || !email || !message) {
-      res.status(400).json({ error: "Missing required contact name, email, or content." });
-      return;
+      return res.status(400).json({ error: "Missing required contact name, email, or content." });
     }
 
-    let defaultGreeting = `Hi ${name}, thank you for reaching out! I appreciate your interest in my background. I have received your message regarding '${message.substring(0, 30)}...' and will follow up with you personally via ${email} soon. Feel free to download my resume below!`;
+    let defaultGreeting = `Hi ${name}, thank you for reaching out! I appreciate your interest in my background. I have received your message and will follow up with you personally at ${email} soon. Feel free to download my resume below!`;
 
+    // Generate AI response if Gemini API is available
     try {
       const client = getGeminiClient();
       const prompt = `
@@ -151,18 +157,18 @@ app.post("/api/contact", async (req, res) => {
         Message: ${message}
       `;
 
-      // Structure safely within the expected structural array parameters
       const aiResponse = await client.models.generateContent({
         model: "gemini-2.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: { temperature: 0.8 }
       });
 
-      if (aiResponse.text) {
+      if (aiResponse && aiResponse.text) {
         defaultGreeting = aiResponse.text.trim();
       }
     } catch (aiErr) {
-      console.warn("Could not generate personalized automated greeting, falling back to clean template.", aiErr);
+      console.warn("Could not generate AI response, using default template:", aiErr);
+      // Continue with default greeting if AI fails
     }
 
     const newLead: Lead = {
@@ -176,8 +182,9 @@ app.post("/api/contact", async (req, res) => {
     };
 
     leads.push(newLead);
+    console.log(`New lead received: ${name} from ${company || 'Independent'}`);
 
-    res.json({
+    return res.status(200).json({
       success: true,
       message: "Lead submitted successfully!",
       lead: newLead,
@@ -185,7 +192,7 @@ app.post("/api/contact", async (req, res) => {
     });
   } catch (err: any) {
     console.error("Contact API Server Error:", err);
-    res.status(500).json({ error: "Could not register contact query." });
+    return res.status(500).json({ error: "Could not register contact query.", details: err.message });
   }
 });
 

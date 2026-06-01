@@ -11,6 +11,15 @@ export default function RecruiterDashboard() {
     setLoading(true);
     try {
       const res = await fetch("/api/messages");
+      if (!res.ok) {
+        throw new Error(`Fetch failed: ${res.status}`);
+      }
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Invalid content type from API");
+      }
+
       const data = await res.json();
       if (data.leads) {
         setLeads(data.leads);
@@ -33,6 +42,16 @@ export default function RecruiterDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id })
       });
+
+      if (!res.ok) {
+        throw new Error(`Delete failed: ${res.status}`);
+      }
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Invalid content type from delete API");
+      }
+
       const data = await res.json();
       if (data.success) {
         // Remove locally

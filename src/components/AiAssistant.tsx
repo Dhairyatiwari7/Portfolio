@@ -57,6 +57,15 @@ export default function AiAssistant() {
         body: JSON.stringify({ messages: history })
       });
 
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status}`);
+      }
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Invalid response content type from AI API");
+      }
+
       const data = await res.json();
       
       const assistantMsg: Message = {
