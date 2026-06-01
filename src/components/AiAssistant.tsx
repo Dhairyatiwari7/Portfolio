@@ -75,19 +75,8 @@ export default function AiAssistant() {
       };
       
       setMessages(prev => [...prev, assistantMsg]);
-    } catch (err) {
-      console.error(err);
-      setMessages(prev => [
-        ...prev,
-        {
-          id: String(Date.now() + 2),
-          sender: "assistant",
-          text: "I appear to be in local deployment mode. To chat dynamically, please confirm that your _KEY environment variable is configured in the AI Studio secret settings!"
-        }
-      ]);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err: any) {
+      console.error(\"Chat error:\", err);\n      let errorMsg = \"I appear to be in local deployment mode. Please configure GEMINI_API_KEY on the server to enable AI responses.\";\n      \n      if (err?.message?.includes(\"503\")) {\n        errorMsg = \"AI service not available. GEMINI_API_KEY environment variable is not configured.\";\n      } else if (err?.message?.includes(\"Invalid response\")) {\n        errorMsg = \"Server error. Backend may not be running correctly.\";\n      }\n      \n      setMessages(prev => [\n        ...prev,\n        {\n          id: String(Date.now() + 2),\n          sender: \"assistant\",\n          text: errorMsg\n        }\n      ]);\n    } finally {\n      setLoading(false);\n    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {

@@ -9,18 +9,22 @@ import { resumeData } from "./src/resumeData.js";
 const env = loadEnv(process.env.NODE_ENV || "development", process.cwd(), "");
 Object.assign(process.env, env);
 
-// Debug: Log API key status
-if (process.env.VITE_GEMINI_API_KEY && process.env.VITE_GEMINI_API_KEY !== "MY_GEMINI_API_KEY") {
-  console.log("✓ Gemini API key loaded");
-} else {
-  console.warn("⚠ Gemini API key not configured - AI responses will use fallback");
+// Ensure JSON responses have proper Content-Type header
+function sendJSON(res: any, status: number, data: any) {
+  res.status(status);
+  res.setHeader("Content-Type", "application/json");
+  res.json(data);
 }
 
 // Initialize express app
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use((req, res, next) => {
+  res.setHeader("Content-Type", "application/json");
+  next();
+});
 
 // In-memory array for persistent lead tracking across the demo
 interface Lead {
@@ -49,10 +53,11 @@ const leads: Lead[] = [
 let aiClient: GoogleGenAI | null = null;
 
 function getGeminiClient(): GoogleGenAI {
-  // Grab the key safely from process.env now that loadEnv has matched and injected it
-  const apiKey = process.env.VITE_GEMINI_API_KEY || "";
+  // Check both VITE_ prefixed and non-prefixed versions of the API key
+  let apiKey = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "";
+  
   if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-    throw new Error("GEMINI_API_KEY environment variable is not set up correctly.");
+    throw new Error("GEMINI_API_KEY not configured. Set VITE_GEMINI_API_KEY or GEMINI_API_KEY environment variable.");
   }
   if (!aiClient) {
     aiClient = new GoogleGenAI({
@@ -72,58 +77,66 @@ app.post("/api/chat", async (req, res) => {
   try {
     const { messages } = req.body;
     if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ error: "Invalid messages payload." });
+      return sendJSON(res, 400, { error: "Invalid messages payload." });
     }
 
-    const client = getGeminiClient();
+    try {
+      const client = getGeminiClient();
 
-    // System instruction acts as the strict persona context of Dhairya Tiwari
-    const systemPrompt = `
-      You are "Dhairya's Professional AI Envoy" - a digital, interactive version of Dhairya Tiwari (Full-Stack Developer and ML Engineer, studying B.Tech CSE at VIT Chennai, Expected 2027, CGPA 9.3).
-      Your core mission is to represent Dhairya professionally to recruiters, tech leads, or builders who visit his website.
-      
-      Here are the strict rules you must adhere to:
-      1. Speak as a confident, highly capable, professional, and friendly engineer. 
-      2. Support your answers EXACTLY using the Resume Data provided below. NEVER invent facts, scores, dates, or projects.
-      3. If asked about a tech stack NOT mentioned, state that while you haven't deployed it yet, you pick up frameworks quickly (as demonstrated by your FastAPI and open router projects) and can adapt.
-      4. Avoid typing in blocks. Keep answers conversational, structurally neat, with selective bullet points.
-      5. The visitor to the portfolio may ask to schedule an interview or download your resume. Tell them to use the interactive contact form on the side or bottom to submit their query, which instantly notifies you and unlocks the direct PDF resume.
+      // System instruction acts as the strict persona context of Dhairya Tiwari
+      const systemPrompt = `
+        You are "Dhairya's Professional AI Envoy" - a digital, interactive version of Dhairya Tiwari (Full-Stack Developer and ML Engineer, studying B.Tech CSE at VIT Chennai, Expected 2027, CGPA 9.3).
+        Your core mission is to represent Dhairya professionally to recruiters, tech leads, or builders who visit his website.
+        
+        Here are the strict rules you must adhere to:
+        1. Speak as a confident, highly capable, professional, and friendly engineer. 
+        2. Support your answers EXACTLY using the Resume Data provided below. NEVER invent facts, scores, dates, or projects.
+        3. If asked about a tech stack NOT mentioned, state that while you haven't deployed it yet, you pick up frameworks quickly (as demonstrated by your FastAPI and open router projects) and can adapt.
+        4. Avoid typing in blocks. Keep answers conversational, structurally neat, with selective bullet points.
+        5. The visitor to the portfolio may ask to schedule an interview or download your resume. Tell them to use the interactive contact form on the side or bottom to submit their query, which instantly notifies you and unlocks the direct PDF resume.
 
-      Dhairya's Official Resume Facts:
-      - EDUCATION: VIT Chennai, B.Tech CSE (Expected 2027, CGPA 9.3). Puranchandra Vidyaniketan (Class XII (2023): 95.8%), Birla School Pilani (Class X (2021): 90.2%).
-      - INTERNSHIPS:
-        - BrandedBuddies (Full-Stack Intern, May - June 2025). Built 'SafarBuddy' travel portal using React, Node, MongoDB. High performance improvements via lazy loading.
-        - DevLaunch Pvt Ltd (Web Developer Intern, May - July 2025). Built full-stack production platform 'pujapathseva.com' with OTP-auth, role management schemas, and gateway integrations.
-      - CORE PROJECTS:
-        - Prescripto Healthcare: MERN platform, JWT, RBAC, conflict-aware live calendar queues.
-        - AI Website Builder: Dynamic layout schemas generator using OpenRouter API, TypeScript, Prisma ORM, PostgreSQL, Stripe tier limits.
-        - Tomato Disease Predictor: GoogLeNet (Inception v1) CNN model on PyTorch + FastAPI, 10-class PlantVillage diagnostic helper.
-      - STACK & SKILLS: Python, C++, Java, Node.js, React.js, Tailwind CSS, PostgreSQL, MongoDB, PyTorch, PySpark/Panda pipelines, Git/GitHub actions.
-      - KEY ACHIEVEMENTS: Solved 730+ problems on LeetCode with contest rating 1750+. Winner of EmpowerTech Hackathon (1st Place). Rank 8 of 250+ at HacknDroid.
-    `;
+        Dhairya's Official Resume Facts:
+        - EDUCATION: VIT Chennai, B.Tech CSE (Expected 2027, CGPA 9.3). Puranchandra Vidyaniketan (Class XII (2023): 95.8%), Birla School Pilani (Class X (2021): 90.2%).
+        - INTERNSHIPS:
+          - BrandedBuddies (Full-Stack Intern, May - June 2025). Built 'SafarBuddy' travel portal using React, Node, MongoDB. High performance improvements via lazy loading.
+          - DevLaunch Pvt Ltd (Web Developer Intern, May - July 2025). Built full-stack production platform 'pujapathseva.com' with OTP-auth, role management schemas, and gateway integrations.
+        - CORE PROJECTS:
+          - Prescripto Healthcare: MERN platform, JWT, RBAC, conflict-aware live calendar queues.
+          - AI Website Builder: Dynamic layout schemas generator using OpenRouter API, TypeScript, Prisma ORM, PostgreSQL, Stripe tier limits.
+          - Tomato Disease Predictor: GoogLeNet (Inception v1) CNN model on PyTorch + FastAPI, 10-class PlantVillage diagnostic helper.
+        - STACK & SKILLS: Python, C++, Java, Node.js, React.js, Tailwind CSS, PostgreSQL, MongoDB, PyTorch, PySpark/Panda pipelines, Git/GitHub actions.
+        - KEY ACHIEVEMENTS: Solved 730+ problems on LeetCode with contest rating 1750+. Winner of EmpowerTech Hackathon (1st Place). Rank 8 of 250+ at HacknDroid.
+      `;
 
-    // Map the incoming array of messages specifically to contents expected by the SDK
-    const contentPayload = messages.map((msg: any) => ({
-      role: msg.role === "assistant" ? "model" : "user",
-      parts: [{ text: msg.content }]
-    }));
+      // Map the incoming array of messages specifically to contents expected by the SDK
+      const contentPayload = messages.map((msg: any) => ({
+        role: msg.role === "assistant" ? "model" : "user",
+        parts: [{ text: msg.content }]
+      }));
 
-    // Perform generation using correct systemInstruction assignment block
-    const response = await client.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: contentPayload,
-      config: {
-        systemInstruction: systemPrompt,
-        temperature: 0.7,
-      }
-    });
+      // Perform generation using correct systemInstruction assignment block
+      const response = await client.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: contentPayload,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: 0.7,
+        }
+      });
 
-    const aiText = (response && response.text) || "I apologize, but I could not formulate a response. Can you ask that again?";
-    return res.status(200).json({ message: aiText });
+      const aiText = (response && response.text) || "I apologize, but I could not formulate a response. Can you ask that again?";
+      return sendJSON(res, 200, { message: aiText });
+    } catch (aiErr: any) {
+      console.error("Gemini API Error:", aiErr);
+      return sendJSON(res, 503, {
+        error: "AI service temporarily unavailable",
+        message: aiErr.message || "Gemini API is not configured"
+      });
+    }
   } catch (err: any) {
     console.error("Chat API Error:", err);
-    return res.status(500).json({
-      error: "AI Envoy offline",
+    return sendJSON(res, 500, {
+      error: "Chat API error",
       message: err.message || "Something went wrong"
     });
   }
@@ -135,7 +148,7 @@ app.post("/api/contact", async (req, res) => {
     const { name, company, email, message } = req.body;
 
     if (!name || !email || !message) {
-      return res.status(400).json({ error: "Missing required contact name, email, or content." });
+      return sendJSON(res, 400, { error: "Missing required contact name, email, or content." });
     }
 
     let defaultGreeting = `Hi ${name}, thank you for reaching out! I appreciate your interest in my background. I have received your message and will follow up with you personally at ${email} soon. Feel free to download my resume below!`;
@@ -184,7 +197,7 @@ app.post("/api/contact", async (req, res) => {
     leads.push(newLead);
     console.log(`New lead received: ${name} from ${company || 'Independent'}`);
 
-    return res.status(200).json({
+    return sendJSON(res, 200, {
       success: true,
       message: "Lead submitted successfully!",
       lead: newLead,
@@ -192,28 +205,33 @@ app.post("/api/contact", async (req, res) => {
     });
   } catch (err: any) {
     console.error("Contact API Server Error:", err);
-    return res.status(500).json({ error: "Could not register contact query.", details: err.message });
+    return sendJSON(res, 500, { error: "Could not register contact query.", details: err.message });
   }
 });
 
 // 3. API: Fetch Outgoing/Incoming Lead Dashboard (Recruiter CRM Sandbox)
 app.get("/api/messages", (req, res) => {
-  res.json({ leads });
+  return sendJSON(res, 200, { leads });
 });
 
 app.post("/api/messages/delete", (req, res) => {
-  const { id } = req.body;
-  const index = leads.findIndex(lead => lead.id === id);
-  if (index > -1) {
-    leads.splice(index, 1);
-    res.json({ success: true, message: "Lead removed from sandbox dashboard." });
-  } else {
-    res.status(404).json({ error: "Lead not found." });
+  try {
+    const { id } = req.body;
+    const index = leads.findIndex(lead => lead.id === id);
+    if (index > -1) {
+      leads.splice(index, 1);
+      return sendJSON(res, 200, { success: true, message: "Lead removed from sandbox dashboard." });
+    } else {
+      return sendJSON(res, 404, { error: "Lead not found." });
+    }
+  } catch (err: any) {
+    return sendJSON(res, 500, { error: "Delete failed", details: err.message });
   }
 });
 
 // 4. API: Standalone Raw Markdown Resume Export to ensure clean instant downloads for recruiters
 app.get("/api/download-resume", (req, res) => {
+  res.setHeader("Content-Type", "text/markdown");
   const resumeMarkdown = `
 # DHAIRYA TIWARI
 **Full-Stack Developer & ML Engineer**
