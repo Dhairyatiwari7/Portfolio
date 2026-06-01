@@ -1,17 +1,36 @@
 import React, { useState } from "react";
 import emailjs from "@emailjs/browser";
 import {
-  Send, Mail, Building, User, MailCheck,
-  Loader2, MessageSquare, Globe, ArrowRight, Sparkles,
-  Github, Linkedin, ArrowUpRight
+  Send,
+  Mail,
+  Building,
+  User,
+  MailCheck,
+  Loader2,
+  MessageSquare,
+  Globe,
+  ArrowRight,
+  Sparkles,
+  Github,
+  Linkedin,
+  ArrowUpRight,
 } from "lucide-react";
-
+emailjs.init(import.meta.env.VITE_EMAILJS_PUBLIC_KEY);
 export default function ContactForm() {
-  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [formData, setFormData] = useState({ name: "", company: "", email: "", message: "" });
+  const [status, setStatus] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
+  const [formData, setFormData] = useState({
+    name: "",
+    company: "",
+    email: "",
+    message: "",
+  });
   const [aiResponseText, setAiResponseText] = useState<string>("");
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
@@ -47,10 +66,9 @@ export default function ContactForm() {
       };
 
       await emailjs.send(
-        "service_yv3atfe",
-        "template_k389onp",
+        import.meta.env.VITE_EMAILJS_SERVICE_ID,
+        import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
         templateParams,
-        "PzPms7G8l8Zof_D2z"
       );
 
       setStatus("success");
@@ -69,10 +87,8 @@ export default function ContactForm() {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] rounded-full bg-blue-400/5 blur-[100px] pointer-events-none" />
 
       <div className="max-w-6xl w-full grid grid-cols-1 lg:grid-cols-12 gap-12 items-center relative z-10">
-        
         {/* Left Column: Context Info */}
         <div className="lg:col-span-5 space-y-6 text-left">
-          
           <div className="inline-flex items-center gap-2 bg-blue-950/40 border border-blue-900/50 rounded-full px-3.5 py-1 text-[11px] text-blue-300 font-mono shadow-[0_2px_10px_rgba(59,130,246,0.05)]">
             <Sparkles className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
             <span>LET'S BUILD SOMETHING PREMIUM</span>
@@ -86,20 +102,23 @@ export default function ContactForm() {
           </h2>
 
           <p className="text-sm sm:text-base text-slate-400 leading-relaxed font-sans max-w-xl">
-            Whether you are looking to build a highly scalable web application, integrate deep learning pipelines, or simply want to sync up—drop a message.
+            Whether you are looking to build a highly scalable web application,
+            integrate deep learning pipelines, or simply want to sync up—drop a
+            message.
           </p>
 
           <div className="pt-6 space-y-5">
-            
             {/* Email */}
             <div className="flex items-center gap-4 group">
               <div className="p-3 rounded-xl bg-[#0e111a] border border-slate-800 text-blue-400 transition-transform duration-300 group-hover:scale-105 group-hover:border-slate-700">
                 <Mail className="w-5 h-5" />
               </div>
               <div className="flex flex-col items-start">
-                <p className="text-[10px] text-slate-500 font-mono tracking-wider uppercase mb-0.5">Direct Communication</p>
-                <a 
-                  href="mailto:dhairyatiwari186@gmail.com" 
+                <p className="text-[10px] text-slate-500 font-mono tracking-wider uppercase mb-0.5">
+                  Direct Communication
+                </p>
+                <a
+                  href="mailto:dhairyatiwari186@gmail.com"
                   className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-200 hover:text-blue-400 transition-colors group/link"
                 >
                   Send an Email
@@ -114,9 +133,11 @@ export default function ContactForm() {
                 <Github className="w-5 h-5" />
               </div>
               <div className="flex flex-col items-start">
-                <p className="text-[10px] text-slate-500 font-mono tracking-wider uppercase mb-0.5">Open Source</p>
-                <a 
-                  href="https://github.com/Dhairyatiwari7" 
+                <p className="text-[10px] text-slate-500 font-mono tracking-wider uppercase mb-0.5">
+                  Open Source
+                </p>
+                <a
+                  href="https://github.com/Dhairyatiwari7"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-200 hover:text-blue-400 transition-colors group/link"
@@ -133,9 +154,11 @@ export default function ContactForm() {
                 <Linkedin className="w-5 h-5" />
               </div>
               <div className="flex flex-col items-start">
-                <p className="text-[10px] text-slate-500 font-mono tracking-wider uppercase mb-0.5">Professional Network</p>
-                <a 
-                  href="https://www.linkedin.com/in/dhairya-tiwari7/" 
+                <p className="text-[10px] text-slate-500 font-mono tracking-wider uppercase mb-0.5">
+                  Professional Network
+                </p>
+                <a
+                  href="https://www.linkedin.com/in/dhairya-tiwari7/"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-200 hover:text-blue-400 transition-colors group/link"
@@ -152,18 +175,20 @@ export default function ContactForm() {
                 <Globe className="w-5 h-5" />
               </div>
               <div className="flex flex-col items-start">
-                <p className="text-[10px] text-slate-500 font-mono tracking-wider uppercase mb-0.5">Location Base</p>
-                <p className="text-sm font-bold text-slate-200">Available globally for remote engagement</p>
+                <p className="text-[10px] text-slate-500 font-mono tracking-wider uppercase mb-0.5">
+                  Location Base
+                </p>
+                <p className="text-sm font-bold text-slate-200">
+                  Available globally for remote engagement
+                </p>
               </div>
             </div>
-
           </div>
         </div>
 
         {/* Right Column: Form Interface */}
         <div className="lg:col-span-7">
           <div className="relative rounded-2xl border border-slate-800/80 bg-[#0c0f19]/95 p-8 sm:p-10 backdrop-blur-md shadow-[0_20px_60px_rgba(0,0,0,0.45)] overflow-hidden">
-            
             {/* Embedded Ambient Glows within Card */}
             <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
             <div className="absolute bottom-0 left-0 w-24 h-24 rounded-full bg-slate-400/5 blur-2xl pointer-events-none" />
@@ -173,7 +198,9 @@ export default function ContactForm() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   {/* Name Input */}
                   <div className="space-y-2">
-                    <label className="block text-[10px] font-mono tracking-wider text-slate-400 uppercase">Your Name</label>
+                    <label className="block text-[10px] font-mono tracking-wider text-slate-400 uppercase">
+                      Your Name
+                    </label>
                     <div className="relative">
                       <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                       <input
@@ -190,7 +217,9 @@ export default function ContactForm() {
 
                   {/* Company Input */}
                   <div className="space-y-2">
-                    <label className="block text-[10px] font-mono tracking-wider text-slate-400 uppercase">Company <span className="text-slate-600">(Optional)</span></label>
+                    <label className="block text-[10px] font-mono tracking-wider text-slate-400 uppercase">
+                      Company <span className="text-slate-600">(Optional)</span>
+                    </label>
                     <div className="relative">
                       <Building className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                       <input
@@ -207,7 +236,9 @@ export default function ContactForm() {
 
                 {/* Email Input */}
                 <div className="space-y-2">
-                  <label className="block text-[10px] font-mono tracking-wider text-slate-400 uppercase">Email Address</label>
+                  <label className="block text-[10px] font-mono tracking-wider text-slate-400 uppercase">
+                    Email Address
+                  </label>
                   <div className="relative">
                     <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                     <input
@@ -224,7 +255,9 @@ export default function ContactForm() {
 
                 {/* Message Input */}
                 <div className="space-y-2">
-                  <label className="block text-[10px] font-mono tracking-wider text-slate-400 uppercase">Your Message</label>
+                  <label className="block text-[10px] font-mono tracking-wider text-slate-400 uppercase">
+                    Your Message
+                  </label>
                   <div className="relative">
                     <MessageSquare className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-500" />
                     <textarea
@@ -260,7 +293,8 @@ export default function ContactForm() {
 
                 {status === "error" && (
                   <p className="text-center text-xs text-red-400 font-medium bg-red-950/20 border border-red-900/40 py-2.5 rounded-lg">
-                    Submission error occurred. Please verify connections or try again directly via email.
+                    Submission error occurred. Please verify connections or try
+                    again directly via email.
                   </p>
                 )}
               </form>
@@ -270,17 +304,22 @@ export default function ContactForm() {
                 <div className="w-16 h-16 bg-blue-950/40 border border-blue-900/50 text-blue-400 rounded-2xl flex items-center justify-center mx-auto shadow-[0_0_30px_rgba(59,130,246,0.15)]">
                   <MailCheck className="w-8 h-8" />
                 </div>
-                
+
                 <div className="space-y-2">
-                  <h3 className="text-2xl font-black text-slate-100 font-sans uppercase tracking-tight">Transmission Authenticated</h3>
+                  <h3 className="text-2xl font-black text-slate-100 font-sans uppercase tracking-tight">
+                    Transmission Authenticated
+                  </h3>
                   <p className="text-sm text-slate-400 max-w-md mx-auto">
-                    Your transmission data has been accepted securely by both database and email dispatch systems.
+                    Your transmission data has been accepted securely by both
+                    database and email dispatch systems.
                   </p>
                 </div>
 
                 {aiResponseText && (
                   <div className="bg-[#0e111a] border border-slate-800 text-slate-300 text-left p-4 rounded-xl text-xs space-y-2 shadow-inner">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400 block font-mono">System Node Auto-Reply:</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400 block font-mono">
+                      System Node Auto-Reply:
+                    </span>
                     <p className="italic leading-relaxed">"{aiResponseText}"</p>
                   </div>
                 )}
@@ -296,7 +335,6 @@ export default function ContactForm() {
             )}
           </div>
         </div>
-
       </div>
     </section>
   );
