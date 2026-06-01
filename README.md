@@ -55,6 +55,8 @@ npm run dev
 
 Env: `GEMINI_API_KEY`, `FRONTEND_URL` (your static site URL)
 
+Do **not** set `NODE_ENV=production` on the API service until after build works (or keep it unset — Render sets `PORT` automatically). If `NODE_ENV=production` during install, npm skips devDependencies and the build can fail.
+
 ### Frontend (`client/`)
 
 | Setting | Value |
